@@ -6,7 +6,14 @@ from tinman import txgen
 
 FULL_CONF = {
     "transactions_per_block" : 40,
+    "steem_block_interval" : 3,
+    "num_blocks_to_clear_witness_round" : 21,
+    "transaction_witness_setup_pad" : 100,
+    "steem_max_authority_membership" : 10,
+    "steem_address_prefix" : "TST",
+    "steem_init_miner_name" : 'initminer',
     "snapshot_file" : "/tmp/test-snapshot.json",
+    "backfill_file" : "/tmp/test-backfill.actions",
     "min_vesting_per_account" : {"amount" : "1", "precision" : 3, "nai" : "@@000000021"},
     "total_port_balance" : {"amount" : "200000000000", "precision" : 3, "nai" : "@@000000021"},
     "accounts" : {
@@ -212,22 +219,36 @@ class TxgenTest(unittest.TestCase):
             
     def test_build_actions(self):
         shutil.copyfile("test-snapshot.json", "/tmp/test-snapshot.json")
+        shutil.copyfile("test-backfill.actions", "/tmp/test-backfill.actions")
         
         for action in txgen.build_actions(FULL_CONF):
             cmd, args = action
             
             if cmd == "metadata":
-                self.assertEqual(args["txgen:semver"], "0.2")
-                self.assertEqual(args["txgen:transactions_per_block"], 40)
-                self.assertIsNotNone(args["epoch:created"])
-                self.assertEqual(args["actions:count"], 63)
-                self.assertGreater(args["recommend:miss_blocks"], 28968013)
-                self.assertEqual(args["snapshot:semver"], "0.2")
-                self.assertEqual(args["snapshot:origin_api"], "http://calculon.local")
+                if not args.get("post_backfill"):
+                    self.assertEqual(args["txgen:semver"], "0.2")
+                    self.assertEqual(args["txgen:transactions_per_block"], 40)
+                    self.assertIsNotNone(args["epoch:created"])
+                    self.assertEqual(args["actions:count"], 73)
+                    self.assertGreater(args["recommend:miss_blocks"], 28631339)
+                    self.assertEqual(args["snapshot:semver"], "0.2")
+                    self.assertEqual(args["snapshot:origin_api"], "http://calculon.local")
             elif cmd == "wait_blocks":
                 self.assertGreater(args["count"], 0)
             elif cmd == "submit_transaction":
                 self.assertGreater(len(args["tx"]["operations"]), 0)
+                self.assertIsInstance(args["tx"]["wif_sigs"], list)
+                for wif in args["tx"]["wif_sigs"]:
+                    if isinstance(wif, str):
+                        esc = args.get("esc", None)
+                        
+                        if esc and len(wif) < 51:
+                            self.assertEqual(esc, wif[0])
+                            self.assertEqual(esc, wif[-1])
+                        else:
+                            self.assertEqual(len(wif), 51)
+                    else:
+                        self.assertIsInstance(wif, prockey.ProceduralPrivateKey)
             else:
                 self.fail("Unexpected action: %s" % cmd)
 
